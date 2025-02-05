@@ -1,6 +1,4 @@
-use std::io::Write;
-
-use jcore::{memory::Stack, vm::Machine};
+use jcore::vm::Machine;
 
 fn main() {
     let mut machine = Machine::new();
@@ -20,6 +18,9 @@ fn main() {
                   | rs  |                   |
         |---- ----|-----|-------------------|
             op      rd          imm
+
+        branch instructions: 0101 | 1101
+        TODO: implement
 
         syscall instructions: 0111 | 1111
         TODO: implement
@@ -80,6 +81,8 @@ fn main() {
         machine.step().unwrap();
         machine.state();
     }
+
+    assert_eq!(machine[SP], 0x400 - 4);
 
     println!("{}", machine.mem.read_u32(machine[SP]).unwrap());
     println!("{:?}", machine.mem);

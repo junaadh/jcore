@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{error::Exception, register::Register, vm::OP_LEN};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -34,6 +36,25 @@ impl TryFrom<u8> for Op {
             0x33 => Push,
             0x34 => Pop,
             _ => return Err(Exception::InvalidOp(value)),
+        })
+    }
+}
+
+impl FromStr for Op {
+    type Err = Exception;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.to_lowercase();
+        Ok(match s.as_str() {
+            "nop" => Self::Nop,
+            "add" => Self::Add,
+            "sub" => Self::Sub,
+            "mul" => Self::Mul,
+            "div" => Self::Div,
+            "ldr" => Self::Ldr,
+            "push" => Self::Push,
+            "pop" => Self::Pop,
+            _ => return Err(Exception::UnknownSymbol(s.into_boxed_str(), 0)),
         })
     }
 }

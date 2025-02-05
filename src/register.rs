@@ -11,6 +11,8 @@ pub enum Register {
     FLAGS,
 }
 
+use std::str::FromStr;
+
 pub use Register::*;
 
 use crate::error::Exception;
@@ -32,6 +34,24 @@ impl TryFrom<u8> for Register {
             6 => BP,
             7 => FLAGS,
             _ => return Err(Exception::InvalidReg(value)),
+        })
+    }
+}
+
+impl FromStr for Register {
+    type Err = Exception;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "r0" | "R0" => Self::R0,
+            "r1" | "R1" => Self::R1,
+            "r2" | "R2" => Self::R2,
+            "r3" | "R3" => Self::R3,
+            "sp" | "SP" => Self::SP,
+            "pc" | "PC" => Self::PC,
+            "bp" | "BP" => Self::BP,
+            "flags" | "FLAGS" => Self::FLAGS,
+            _ => return Err(Exception::UnknownSymbol(s.to_string().into_boxed_str(), 0)),
         })
     }
 }

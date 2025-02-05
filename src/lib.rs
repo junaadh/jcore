@@ -1,3 +1,4 @@
+pub mod assembler;
 mod error;
 pub mod memory;
 pub mod opcode;
