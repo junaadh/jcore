@@ -1,6 +1,8 @@
 use super::symbols::{SymbolId, SymbolTable};
-use crate::{assembler::symbols::SymbolKind, opcode::Op, register::Register};
-use std::str::Chars;
+use crate::{
+    assembler::symbols::SymbolKind, opcode::Op, register::Register,
+};
+use std::{str::Chars, sync::MutexGuard};
 use TokensKind::*;
 
 #[derive(Debug)]
@@ -8,12 +10,30 @@ pub struct Lexer<'src> {
     pub source: &'src str,
     chars: Chars<'src>,
     start: usize,
-    syms: &'src mut SymbolTable<'src>,
+    syms: MutexGuard<'src, SymbolTable<'static>>,
     line: usize,
 }
 
+pub fn tokenize<'src>(
+    source: &'src str,
+    syms: MutexGuard<'src, SymbolTable<'static>>,
+) -> impl Iterator<Item = Token> + use<'src> {
+    let mut lexer = Lexer::new(source, syms);
+    std::iter::from_fn(move || {
+        let token = lexer.next_token();
+        if token.kind != TokensKind::Eof {
+            Some(token)
+        } else {
+            None
+        }
+    })
+}
+
 impl<'src> Lexer<'src> {
-    pub fn new(source: &'src str, syms: &'src mut SymbolTable<'src>) -> Self {
+    pub fn new(
+        source: &'src str,
+        syms: MutexGuard<'src, SymbolTable<'static>>,
+    ) -> Self {
         Self {
             source,
             chars: source.chars(),
@@ -23,17 +43,21 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    pub fn next_token(&mut self) -> Token {
-        self.advance_while(|c| c.is_whitespace());
+    fn next_token(&mut self) -> Token {
+        self.advance_while(|c| matches!(c, '\t' | '\r' | ' '));
         self.start = self.pos();
 
         let char = self.advance();
+        // print!("'{char}' ");
 
         let kind = match char {
+            '\n' => Newline,
             '#' => {
                 self.start = self.pos();
                 // consume number
-                self.advance_while(|c| c.is_ascii_hexdigit() || c == 'x');
+                self.advance_while(|c| {
+                    c.is_ascii_hexdigit() || c == 'x'
+                });
                 let content = self.content().trim_start_matches("0x");
                 match content.parse::<i8>() {
                     Ok(imm) => Imm(imm as i32),
@@ -47,29 +71,45 @@ impl<'src> Lexer<'src> {
                 }
             }
             x if x.is_ascii_alphabetic() || x == '_' => {
-                self.advance_while(|x| x.is_ascii_alphanumeric() || x == '_');
+                self.advance_while(|x| {
+                    x.is_ascii_alphanumeric() || x == '_'
+                });
                 let content = self.content().to_lowercase();
 
                 match content.parse::<Register>() {
                     Ok(r) => Register(r),
                     Err(_) => match content.parse::<Op>() {
                         Ok(o) => Mnemonic(o),
-                        Err(_) => Label(self.syms.insert(self.content(), SymbolKind::Label, None)),
+                        Err(_) => {
+                            let s = self.content();
+                            Label(self.syms.insert(
+                                s,
+                                SymbolKind::Label,
+                                None,
+                                self.line,
+                            ))
+                        }
                     },
                 }
             }
             '.' => {
                 self.advance_while(|c| c.is_alphanumeric());
-                Directive(
-                    self.syms
-                        .insert(self.content(), SymbolKind::Directive, None),
-                )
+                let s = self.content();
+                Directive(self.syms.insert(
+                    s,
+                    SymbolKind::Directive,
+                    None,
+                    self.line,
+                ))
             }
             '%' => {
                 self.advance_while(|c| c.is_alphanumeric());
                 Param(
-                    self.syms
-                        .insert(self.content(), SymbolKind::Parameter, None),
+                    self.content()
+                        .trim_start_matches("%")
+                        .parse::<usize>()
+                        .unwrap()
+                        .saturating_sub(1),
                 )
             }
 
@@ -78,11 +118,16 @@ impl<'src> Lexer<'src> {
                 self.advance_while(|c| c != '\n');
                 Comment
             }
+            ':' => Semi,
             '\0' => Eof,
 
-            _ => self.make_error(),
+            _ => {
+                // println!("'{char}' 0x{:02x}", char as u8);
+                self.make_error()
+            }
         };
 
+        // println!(" {:?}", kind);
         Token {
             kind,
             line: self.line,
@@ -124,24 +169,14 @@ impl<'src> Lexer<'src> {
 
     fn make_error(&mut self) -> TokensKind {
         self.advance_while(|x| !x.is_whitespace() || x != ',');
-        Error(self.syms.insert(self.content(), SymbolKind::None, None))
+        let s = self.content();
+        Error(self.syms.insert(s, SymbolKind::None, None, self.line))
     }
 }
 
-impl Iterator for Lexer<'_> {
-    type Item = Token;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let token = self.next_token();
-        if token.kind == Eof {
-            None
-        } else {
-            Some(token)
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default,
+)]
 pub enum TokensKind {
     Mnemonic(Op),
     Register(Register),
@@ -149,12 +184,65 @@ pub enum TokensKind {
     Label(SymbolId),
     Directive(SymbolId),
     Error(SymbolId),
-    Param(SymbolId),
+    Param(usize),
 
     Comment,
     Comma,
+    Semi,
+    Newline,
     #[default]
     Eof,
+}
+
+impl TokensKind {
+    pub fn get_reg(
+        &self,
+    ) -> Result<Register, Box<dyn std::error::Error>> {
+        if let Register(r) = self {
+            Ok(*r)
+        } else {
+            Err("not a register symbol".to_string().into())
+        }
+    }
+
+    pub fn get_op(&self) -> Result<Op, Box<dyn std::error::Error>> {
+        if let Mnemonic(i) = self {
+            Ok(*i)
+        } else {
+            Err("not a operand symbol".to_string().into())
+        }
+    }
+
+    pub fn get_imm(&self) -> Result<i32, Box<dyn std::error::Error>> {
+        if let Imm(i) = self {
+            Ok(*i)
+        } else {
+            Err("not an immediate symbol".to_string().into())
+        }
+    }
+
+    pub fn get_sym(
+        &self,
+    ) -> Result<SymbolId, Box<dyn std::error::Error>> {
+        match *self {
+            Label(s) | Error(s) | Directive(s) => Ok(s),
+            _ => Err(format!("unexpected symbol {:?}", self,).into()),
+        }
+    }
+
+    pub fn is_param(&self) -> bool {
+        matches!(self, TokensKind::Param(_))
+    }
+
+    pub fn get_param(
+        &self,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        if let TokensKind::Param(i) = self {
+            Ok(*i)
+        } else {
+            Err("failed to get the parameter".into())
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]

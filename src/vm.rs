@@ -14,6 +14,7 @@ pub struct Machine {
     register: [BIT; REGISTER_LEN],
     // stack: Stack<BIT, STACK_LEN>,
     pub mem: Box<dyn Addressable>,
+    halt: bool,
 }
 
 impl Default for Machine {
@@ -28,6 +29,7 @@ impl Machine {
             register: [0; REGISTER_LEN],
             // stack: Stack::new(),
             mem: Box::new([0; MEMORY_LEN]),
+            halt: true,
         };
 
         // FIXME: setting the stack pointer
@@ -42,6 +44,18 @@ impl Machine {
         )
     }
 
+    pub fn run(&mut self, f: bool) -> Result<(), Exception> {
+        self.halt = false;
+        while !self.halt {
+            self.step()?;
+            if f {
+                self.state();
+                println!("{}", "-".repeat(10));
+            }
+        }
+        Ok(())
+    }
+
     pub fn step(&mut self) -> Result<(), Exception> {
         let pc = self[PC];
         // print!("DEBUG: pc={} ", pc);
@@ -51,7 +65,10 @@ impl Machine {
         let op = Instruction::try_from(instruction)?;
         // println!("instruction: {op:?}");
         match op {
-            Instruction::Nop => Ok(()),
+            Instruction::Nop => {
+                self.halt = true;
+                Ok(())
+            }
 
             Instruction::Add(r1, r2, r3) => {
                 self[r1] = self[r2]
@@ -92,7 +109,9 @@ impl Machine {
             }
             Instruction::Ldr(r, o) => {
                 self[r] = match o {
-                    crate::opcode::Operand::Reg(r) => self.mem.read_u32(self[r])?,
+                    crate::opcode::Operand::Reg(r) => {
+                        self.mem.read_u32(self[r])?
+                    }
                     crate::opcode::Operand::Imm(i) => i,
                 };
                 Ok(())

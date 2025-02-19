@@ -1,8 +1,8 @@
 .section data
 
 ; this i a comment
-.macro adder %a1 %b2
-   Add %a1, %a1, %b2 ; generic
+.macro adder %1 %2
+   Add %1, %1, %2 ; generic
 .endmacro
 
 .entry _main
@@ -15,11 +15,11 @@
 	pop r1 ; r1 = 10
 	pop r2 ; r2 = 1
 
+	add r0, r1, r2
 	; add r0, r1, r2 ; r0 = r1 + r2
-	adder r0, r1 ; r0 = r0 + r1
+	adder r0  r1 ; r0 = r0 + r1
 	
 	push r0
-	
+	nop
 
 wfi:
-	

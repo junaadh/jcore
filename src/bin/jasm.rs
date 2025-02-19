@@ -3,7 +3,7 @@ use std::{
     io::{self, Read},
 };
 
-use jcore::assembler::{lexer::Lexer, symbols::SymbolTable};
+use jcore::assembler;
 
 fn main() {
     let mut args = env::args();
@@ -25,8 +25,5 @@ fn main() {
         file.read_to_string(&mut buffer).unwrap();
     }
 
-    let mut symbols = SymbolTable::default();
-    let tokens = Lexer::new(&buffer, &mut symbols).collect::<Vec<_>>();
-
-    println!("{tokens:?}")
+    assembler::assemble(filename, &buffer);
 }

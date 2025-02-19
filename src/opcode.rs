@@ -4,6 +4,7 @@ use crate::{error::Exception, register::Register, vm::OP_LEN};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Op {
+    // misc
     Nop = 0x6f,
 
     // arithmetic
@@ -54,7 +55,12 @@ impl FromStr for Op {
             "ldr" => Self::Ldr,
             "push" => Self::Push,
             "pop" => Self::Pop,
-            _ => return Err(Exception::UnknownSymbol(s.into_boxed_str(), 0)),
+            _ => {
+                return Err(Exception::UnknownSymbol(
+                    s.into_boxed_str(),
+                    0,
+                ))
+            }
         })
     }
 }
@@ -101,22 +107,35 @@ impl TryFrom<u32> for Instruction {
     type Error = Exception;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        let imm_flag = (value >> 31) & 0x1 == 1;
+        let mut op_len = OP_LEN * 8;
 
-        let opcode = Op::try_from(((value >> 24) & 0xff) as u8)?;
+        op_len -= 1;
+        let imm_flag = (value >> op_len) & 0x1 == 1;
+
+        op_len -= 7;
+        let opcode = Op::try_from(((value >> op_len) & 0xff) as u8)?;
 
         use self::Op::*;
         Ok(match opcode {
             Nop => Self::Nop,
 
             Add | Sub | Mul | Div => {
-                let r1 = Register::try_from(((value >> 19) & 0x1f) as u8)?;
-                let r2 = Register::try_from(((value >> 14) & 0x1f) as u8)?;
+                op_len -= 5;
+                let r1 = Register::try_from(
+                    ((value >> op_len) & 0x1f) as u8,
+                )?;
+                op_len -= 5;
+                let r2 = Register::try_from(
+                    ((value >> op_len) & 0x1f) as u8,
+                )?;
 
                 let r3 = if imm_flag {
                     Operand::Imm(value & 0x3fff)
                 } else {
-                    Operand::Reg(Register::try_from(((value >> 9) & 0x1f) as u8)?)
+                    op_len -= 5;
+                    Operand::Reg(Register::try_from(
+                        ((value >> op_len) & 0x1f) as u8,
+                    )?)
                 };
 
                 match opcode {
@@ -129,23 +148,35 @@ impl TryFrom<u32> for Instruction {
             }
 
             Ldr => {
-                let r = Register::try_from(((value >> 19) & 0x1f) as u8)?;
+                op_len -= 5;
+                let r = Register::try_from(
+                    ((value >> op_len) & 0x1f) as u8,
+                )?;
                 let o = if imm_flag {
                     Operand::Imm(value & 0x7ffff)
                 } else {
-                    Operand::Reg(Register::try_from(((value >> 14) & 0x1f) as u8)?)
+                    op_len -= 5;
+                    Operand::Reg(Register::try_from(
+                        ((value >> op_len) & 0x1f) as u8,
+                    )?)
                 };
                 Self::Ldr(r, o)
             }
             Push => Self::Push(if imm_flag {
                 Operand::Imm(value & 0xffffff)
             } else {
-                Operand::Reg(Register::try_from(((value >> 19) & 0x1f) as u8)?)
+                op_len -= 5;
+                Operand::Reg(Register::try_from(
+                    ((value >> op_len) & 0x1f) as u8,
+                )?)
             }),
             Pop => Self::Pop(if imm_flag {
                 Operand::Imm(value & 0xffffff)
             } else {
-                Operand::Reg(Register::try_from(((value >> 19) & 0x1f) as u8)?)
+                op_len -= 5;
+                Operand::Reg(Register::try_from(
+                    ((value >> op_len) & 0x1f) as u8,
+                )?)
             }),
         })
     }

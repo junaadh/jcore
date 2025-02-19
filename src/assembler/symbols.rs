@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 pub struct SymbolId(usize);
 
 #[derive(Debug, Default)]
@@ -33,7 +35,13 @@ impl<'s> SymbolTable<'s> {
         leaked
     }
 
-    pub fn insert(&mut self, name: &str, r#type: SymbolKind, value: Option<u32>) -> SymbolId {
+    pub fn insert(
+        &mut self,
+        name: &str,
+        r#type: SymbolKind,
+        value: Option<u32>,
+        line: usize,
+    ) -> SymbolId {
         if let Some(&existing) = self.name_.get(&name) {
             return existing;
         }
@@ -45,12 +53,22 @@ impl<'s> SymbolTable<'s> {
             name: interned_name,
             r#type,
             value,
+            line,
         };
 
         self.name_.insert(interned_name, id);
         self.sym_.insert(id, symbol);
 
         id
+    }
+
+    pub fn update<F>(&mut self, id: SymbolId, predicate: F)
+    where
+        F: FnOnce(&mut Symbol),
+    {
+        if let Some(s) = self.sym_.get_mut(&id) {
+            predicate(s);
+        }
     }
 
     pub fn next_id(&mut self) -> SymbolId {
@@ -70,8 +88,9 @@ impl<'s> SymbolTable<'s> {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Symbol<'s> {
     pub name: &'s str,
-    r#type: SymbolKind,
-    value: Option<u32>,
+    pub r#type: SymbolKind,
+    pub value: Option<u32>,
+    pub line: usize,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
